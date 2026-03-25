@@ -3,7 +3,7 @@ name: Zeabur Factory Test & Auto Renew
 on:
   workflow_dispatch:      # 允许手动点击运行
   schedule:
-    - cron: '0 2 * * *'    # 每天北京时间上午 10:00 自动运行 (UTC 2:00)
+    - cron: '0 2 * * *'    # 每天北京时间上午 10:00 自动运行
 
 jobs:
   renew-task:
@@ -17,18 +17,21 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 安装极简依赖
+      - name: 安装核心依赖
         run: |
-          # 现在的脚本只需要 requests 即可，不需要安装庞大的浏览器环境
-          pip install requests
+          # 1. 安装基础库 (httpx 用于异步请求)
+          pip install playwright httpx
+          # 2. 【关键】安装 Playwright 浏览器内核及 Linux 系统依赖库
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
 
-      - name: 执行远程穿透测试
+      - name: 执行本地触发与远程接力
         env:
-          # --- 核心对接变量 ---
+          # --- 核心环境变量 ---
           ZEABUR_AI_URL: ${{ secrets.ZEABUR_AI_URL }}
           HOSTUUID: ${{ secrets.HOSTUUID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           MY_CHAT_ID: ${{ secrets.MY_CHAT_ID }}
         run: |
-          # 运行我们刚刚精简过的远程指令脚本
+          # 运行本地点按钮 + 远程过人机的接力脚本
           python test_factory.py
