@@ -20,8 +20,8 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install seleniumbase httpx requests
-          # 安装浏览器核心，这是运行 SB 必须的
-          playwright install chromium
+          # 使用 python -m 来调用，确保 100% 能找到命令
+          python -m playwright install chromium
 
       - name: Run Factory Test Script
         env:
