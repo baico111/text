@@ -9,30 +9,26 @@ jobs:
   renew-task:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: 设置 Python 环境
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install Dependencies
+      - name: 安装极简依赖
         run: |
-          # 1. 显式安装核心依赖，务必加上 playwright 包
-          pip install seleniumbase httpx requests playwright
-          
-          # 2. 安装浏览器驱动 (现在 Python 肯定能找到这个模块了)
-          python -m playwright install chromium
+          # 现在的脚本只需要 requests 即可，不需要安装庞大的浏览器环境
+          pip install requests
 
-      - name: Run Factory Test Script
+      - name: 执行远程穿透测试
         env:
-          # --- 核心对接变量 (请在 GitHub Secrets 中配置) ---
-          ZEABUR_AI_URL: ${{ secrets.ZEABUR_AI_URL }}        # https://cfps.zeabur.app/bypass
-          HOSTUUID: ${{ secrets.HOSTUUID }}                  # 你的服务器 UUID
+          # --- 核心对接变量 ---
+          ZEABUR_AI_URL: ${{ secrets.ZEABUR_AI_URL }}
+          HOSTUUID: ${{ secrets.HOSTUUID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           MY_CHAT_ID: ${{ secrets.MY_CHAT_ID }}
-          # ---------------------------------------------
         run: |
-          # 假设你刚才的脚本存为 test_factory.py
+          # 运行我们刚刚精简过的远程指令脚本
           python test_factory.py
