@@ -19,8 +19,10 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install seleniumbase httpx requests
-          # 使用 python -m 来调用，确保 100% 能找到命令
+          # 1. 显式安装核心依赖，务必加上 playwright 包
+          pip install seleniumbase httpx requests playwright
+          
+          # 2. 安装浏览器驱动 (现在 Python 肯定能找到这个模块了)
           python -m playwright install chromium
 
       - name: Run Factory Test Script
