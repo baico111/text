@@ -2,8 +2,6 @@ name: Zeabur Factory Test & Auto Renew
 
 on:
   workflow_dispatch:      # 允许手动点击运行
-  schedule:
-    - cron: '0 2 * * *'    # 每天北京时间上午 10:00 自动运行
 
 jobs:
   renew-task:
