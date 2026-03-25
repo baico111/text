@@ -1,0 +1,36 @@
+name: Zeabur Factory Test & Auto Renew
+
+on:
+  workflow_dispatch:      # 允许手动点击运行
+  schedule:
+    - cron: '0 2 * * *'    # 每天北京时间上午 10:00 自动运行 (UTC 2:00)
+
+jobs:
+  renew-task:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install seleniumbase httpx requests
+          # 安装浏览器核心，这是运行 SB 必须的
+          playwright install chromium
+
+      - name: Run Factory Test Script
+        env:
+          # --- 核心对接变量 (请在 GitHub Secrets 中配置) ---
+          ZEABUR_AI_URL: ${{ secrets.ZEABUR_AI_URL }}        # https://cfps.zeabur.app/bypass
+          HOSTUUID: ${{ secrets.HOSTUUID }}                  # 你的服务器 UUID
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          MY_CHAT_ID: ${{ secrets.MY_CHAT_ID }}
+          # ---------------------------------------------
+        run: |
+          # 假设你刚才的脚本存为 test_factory.py
+          python test_factory.py
