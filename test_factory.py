@@ -1,111 +1,138 @@
 import sys
 import os
-import asyncio
-import base64
 import time
-import httpx
+import json
+import requests
+import base64
 import datetime
-from playwright.async_api import async_playwright
+from seleniumbase import SB
 
 # --- 核心环境变量 (Actions Secrets) ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 MY_CHAT_ID = os.environ.get("MY_CHAT_ID")
-ZEABUR_AI_URL = os.environ.get("ZEABUR_AI_URL") # 你的镜像 /bypass 接口
+ZEABUR_AI_URL = os.environ.get("ZEABUR_AI_URL") # 镜像 /bypass 接口
 HOSTUUID = os.environ.get("HOSTUUID")
 
 TARGET_URL = f"https://host2play.gratis/server/renew?i={HOSTUUID}"
 
-async def send_tg_report(status_text, elapsed, photo_path, token=""):
-    """图文一体化 TG 报告"""
+def smart_ad_remover(sb):
+    """【检测广告并清除】物理抹除遮挡层"""
+    sb.execute_script("""
+        var selectors = ['div[role="dialog"]', '.fc-dialog-container', '.fc-monetization-dialog-container', '.fc-dialog-overlay', 'div[class*="fc-"]', 'ins.adsbygoogle', 'div[id*="google_ads"]'];
+        selectors.forEach(function(s) {
+            document.querySelectorAll(s).forEach(el => el.remove());
+        });
+        if (document.body) {
+            document.body.style.setProperty('overflow', 'auto', 'important');
+        }
+    """)
+
+def send_ui_report(account, expiry_date, photo_path, status_text="续期成功 ✅"):
+    """【合并版精美报告】图文一体"""
     beijing_time = (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
-    display_token = (token[:20] + "...") if token else "无"
-    
-    caption = (
-        f"🛠️ <b>视觉工厂 - 穿透实况报告</b>\n"
+    report_html = (
+        f"✅ <b>Host2Play-自动续期报告by-Baico</b>\n"
         f"————————————————————\n"
-        f"👤 <b>UUID:</b> <code>{HOSTUUID[-12:]}</code>\n"
+        f"👤 <b>UUID:</b> <code>{account[-12:]}</code>\n"
         f"🛰️ <b>状态:</b> {status_text}\n"
-        f"⏱️ <b>总计耗时:</b> {elapsed}\n"
-        f"🔑 <b>Token摘要:</b> <code>{display_token}</code>\n"
+        f"📅 <b>过期时间/状态:</b> {expiry_date}\n"
         f"🕒 <b>北京时间:</b> {beijing_time}\n"
         f"————————————————————"
     )
-    
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     try:
-        async with httpx.AsyncClient() as client:
-            if photo_path and os.path.exists(photo_path):
-                with open(photo_path, 'rb') as img:
-                    await client.post(url, data={'chat_id': MY_CHAT_ID, 'caption': caption, 'parse_mode': 'HTML'}, files={'photo': img}, timeout=20)
-            else:
-                msg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-                await client.post(msg_url, data={'chat_id': MY_CHAT_ID, 'text': caption, 'parse_mode': 'HTML'}, timeout=15)
-    except Exception as e:
-        print(f"[-] TG 发送异常: {e}")
+        if os.path.exists(photo_path):
+            with open(photo_path, 'rb') as photo:
+                requests.post(url, data={
+                    'chat_id': MY_CHAT_ID, 
+                    'caption': report_html, 
+                    'parse_mode': 'HTML'
+                }, files={'photo': photo}, timeout=15)
+    except: pass
 
-async def run_workflow():
-    start_time = time.time()
-    print(f"[*] Actions 本地启动浏览器...", file=sys.stderr)
-    
-    async with async_playwright() as p:
-        # 1. 本地前置操作：点击蓝色按钮以开启人机
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(viewport={'width': 1280, 'height': 800})
-        page = await context.new_page()
+def run_workflow(sb):
+    """
+    【精修判定闭环版】逻辑 - 识图部分接力给镜像
+    """
+    try:
+        sb.open(TARGET_URL)
+        time.sleep(5)
+        smart_ad_remover(sb)
         
-        try:
-            await page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=60000)
-            print(f"[*] 正在点击 Renew server 按钮...", file=sys.stderr)
+        # 1. 点击初始的 Renew server 按钮进入弹窗
+        sb.click('button:contains("Renew server")')
+        time.sleep(3)
+        
+        success_flag = False
+        for attempt in range(6): 
+            # 2. 点击勾选框 iframe
+            iframe_check = 'iframe[title="reCAPTCHA"]'
+            sb.wait_for_element_present(iframe_check, timeout=20)
+            sb.switch_to_frame(iframe_check)
             
-            # 点击页面中心蓝色按钮
-            await page.click("button:has-text('Renew server')")
-            # 给 5-8 秒让 reCAPTCHA 框架加载
-            await asyncio.sleep(8) 
+            if not sb.is_element_visible('.recaptcha-checkbox-checked'):
+                sb.click('.recaptcha-checkbox-border')
+            
+            sb.switch_to_default_content()
+            time.sleep(5)
 
-            # 2. 调用镜像：只负责过人机
-            print(f"[*] 呼叫远程镜像进行 AI 识图接力...", file=sys.stderr)
+            # --- 3. 识图接力：如果弹出了验证挑战，呼叫镜像 ---
+            challenge_selector = 'iframe[src*="api2/bframe"]'
+            if sb.is_element_visible(challenge_selector):
+                print(f"[*] 发现识图挑战，呼叫远程镜像接力...", file=sys.stderr)
+                payload = {
+                    "url": TARGET_URL,
+                    "cookies": sb.get_cookies(), # 共享 Session
+                    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "wait_before_captcha": 5
+                }
+                try:
+                    # 镜像去解验证码，解完后本地页面的 Token 会同步刷新
+                    requests.post(ZEABUR_AI_URL, json=payload, timeout=120)
+                except: pass
+
+            # --- 4. 物理真值判定 (你的核心逻辑) ---
+            time.sleep(6) 
+            recaptcha_token = sb.execute_script("return document.querySelector('#g-recaptcha-response').value;")
             
-            # 这里的 payload 只传 URL 和当前的 Cookies 状态
-            payload = {
-                "url": TARGET_URL,
-                "cookies": await context.cookies(),
-                "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                "wait_before_captcha": 5 # 镜像内部点勾选框后的等待
-            }
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.post(ZEABUR_AI_URL, json=payload, timeout=150)
-                res_data = response.json()
-                
-                if res_data.get("success"):
-                    token = res_data.get("token")
-                    print(f"[+ SUCCESS] 镜像已拿回 Token！长度: {len(token)}", file=sys.stderr)
-                    
-                    # 3. Actions 本地：注入 Token 并完成最后的续期过程
-                    await page.evaluate(f"document.querySelector('#g-recaptcha-response').value = '{token}'")
-                    
-                    # 这里模仿你原本续期成功的判断（比如页面刷新或弹出成功提示）
-                    await asyncio.sleep(3)
-                    final_shot = "final_success.png"
-                    await page.screenshot(path=final_shot)
-                    
-                    elapsed = f"{time.time() - start_time:.2f}s"
-                    await send_tg_report("续期成功 ✅", elapsed, final_shot, token)
-                    return True
-                else:
-                    error_msg = res_data.get("error", "镜像未返回有效结果")
-                    print(f"[-] 镜像解析失败: {error_msg}", file=sys.stderr)
-                    error_shot = "error_shot.png"
-                    await page.screenshot(path=error_shot)
-                    await send_tg_report(f"续期失败 ❌ ({error_msg[:50]})", "0s", error_shot)
-                    
-        except Exception as e:
-            print(f"[-] 流程异常: {e}", file=sys.stderr)
-        finally:
-            await browser.close()
-            
-    return False
+            sb.switch_to_frame(iframe_check)
+            is_checked = sb.get_attribute('#recaptcha-anchor', 'aria-checked') == 'true'
+            is_tick_visible = sb.is_element_visible('.recaptcha-checkbox-checkmark')
+            sb.switch_to_default_content()
+
+            if recaptcha_token and len(recaptcha_token) > 50 and is_checked and is_tick_visible:
+                # 勾选框变绿且拿到 Token，点击 Renew 提交
+                renew_btn = 'button.swal2-confirm.swal2-styled'
+                if sb.is_element_visible(renew_btn):
+                    sb.click(renew_btn)
+                    print(f"[+] 验证成功，接收 Token ({len(recaptcha_token)})，提交续期！", file=sys.stderr)
+                    time.sleep(10)
+                    success_flag = True
+                    break 
+            else:
+                print(f"[!] 第 {attempt + 1} 轮验证未完全通过，刷新重试...", file=sys.stderr)
+                sb.refresh()
+                time.sleep(5)
+                smart_ad_remover(sb)
+                sb.click('button:contains("Renew server")')
+                time.sleep(3)
+
+        if not success_flag: return False
+        
+        # 4. 截图并回传最终结果
+        final_shot = "final_success.png"
+        sb.save_screenshot(final_shot)
+        expiry = sb.get_text('#expireDate') if sb.is_element_visible('#expireDate') else "已提交"
+        
+        send_ui_report(TARGET_URL, expiry, final_shot)
+        return True
+        
+    except Exception as e:
+        print(f"[-] 流程异常: {e}", file=sys.stderr)
+        return False
 
 if __name__ == "__main__":
-    if not asyncio.run(run_workflow()):
-        sys.exit(1)
+    # 使用你指定的 SeleniumBase 启动方式
+    with SB(uc=True, test=True, locale="en") as sb:
+        if not run_workflow(sb):
+            sys.exit(1)
