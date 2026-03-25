@@ -17,14 +17,15 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 安装核心依赖 (Playwright + Requests + HTTPX)
+      - name: 安装 SeleniumBase 及核心依赖
         run: |
-          # 1. 同时安装同步请求库 requests 和 异步库 httpx/playwright
-          pip install playwright httpx requests
-          # 2. 安装 Chromium 浏览器内核
-          python -m playwright install chromium
-          # 3. 安装 Linux 系统必要的运行库
-          python -m playwright install-deps chromium
+          # 1. 安装基础库
+          pip install seleniumbase requests httpx
+          # 2. 【关键】安装浏览器驱动
+          seleniumbase install chromedriver
+          # 3. 安装 Linux 系统必要的运行库 (解决浏览器启动失败)
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libgbm1 libasound2
 
       - name: 执行本地触发与远程接力
         env:
@@ -33,5 +34,5 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           MY_CHAT_ID: ${{ secrets.MY_CHAT_ID }}
         run: |
-          # 运行脚本
+          # 运行你那套精修判定闭环脚本
           python test_factory.py
