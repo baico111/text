@@ -45,19 +45,24 @@ def send_tg_report_with_photo(status_text, elapsed, photo_path, token=""):
 def run_test():
     print(f"[*] 正在向远程视觉工厂发起穿透请求...", file=sys.stderr)
     
-    # --- 核心优化点：注入触发点击指令 ---
+    # --- 核心修复：调整参数，强制工厂端等待 reCAPTCHA 客户端初始化 ---
     payload = {
         "url": TARGET_URL,
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "cookies": [],
-        # 告诉 main.py：进去之后先帮我点这个按钮，验证码才会出来
+        # 1. 触发点击（确保按钮被准确点击）
         "pre_click": "text='Renew server'", 
-        "wait_before_captcha": 3  # 点击后等 3 秒让验证码弹出
+        # 2. 【关键】将等待时间从 3s 提升到 8s
+        # reCAPTCHA 脚本加载和实例化需要时间，3秒太短会导致 "No reCAPTCHA clients exist"
+        "wait_before_captcha": 8, 
+        # 3. 增强稳定性参数（如果 main.py 支持）
+        "retry_count": 2
     }
     
     start_time = time.time()
     try:
-        response = requests.post(ZEABUR_AI_URL, json=payload, timeout=120)
+        # 因为增加了 8s 的固定等待，总超时建议设为 150s 以上
+        response = requests.post(ZEABUR_AI_URL, json=payload, timeout=150)
         elapsed = f"{time.time() - start_time:.2f}s"
         
         if response.status_code == 200:
@@ -78,6 +83,7 @@ def run_test():
                 send_tg_report_with_photo("穿透成功 ✅", elapsed, photo_file if has_photo else "", token)
                 return True
             else:
+                # 即使失败，也会从 res_data 拿到报错信息，例如具体的 Playwright 报错
                 error_msg = res_data.get("error", "AI 判定失败或未拿到 Token")
                 print(f"[-] 穿透失败: {error_msg}", file=sys.stderr)
                 send_tg_report_with_photo(f"穿透失败 ❌ ({error_msg})", elapsed, photo_file if has_photo else "")
